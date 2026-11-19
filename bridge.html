@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- Shop Upgrades browser storage page. Inspired by the QOLLOCK CEF title/hash
+     transport (Apache-2.0); see ATTRIBUTION.md in the public source package. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'">
+  <title>SHOP_BRIDGE_INIT</title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+  if (window.top !== window.self) return;
+  var STORE_KEY = 'deadlock_shop_upgrades_settings_v1';
+  var TOKEN_KEY = '__shop_upgrade_bridge_token__';
+  var token = '';
+  try {
+    localStorage.setItem('__shop_upgrade_storage_probe__', '1');
+    localStorage.removeItem('__shop_upgrade_storage_probe__');
+    token = localStorage.getItem(TOKEN_KEY) || '';
+    if (!/^[0-9a-f]{32}$/.test(token)) {
+      var bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      token = Array.prototype.map.call(bytes, function (v) {
+        return ('0' + v.toString(16)).slice(-2);
+      }).join('');
+      localStorage.setItem(TOKEN_KEY, token);
+    }
+  } catch (error) {
+    document.title = 'SHOP_BRIDGE_ERROR:' + String(error);
+    return;
+  }
+
+  var lastFragment = '';
+  function respond(id, ok, data, error) {
+    var response = { id: id, ok: !!ok };
+    if (data !== undefined) response.data = data;
+    if (error) response.error = String(error);
+    document.title = 'SHOP_RES:' + JSON.stringify(response);
+  }
+  function schema(value) {
+    if (typeof value !== 'string' || value.length > 512) return false;
+    var parsed = JSON.parse(value);
+    return parsed && parsed.version === 1 &&
+      typeof parsed.highlightEnabled === 'boolean' &&
+      typeof parsed.upgradeSearchEnabled === 'boolean';
+  }
+  function onHash() {
+    var fragment = location.hash.slice(1);
+    if (!fragment || lastFragment === fragment || fragment.length > 2048) return;
+    lastFragment = fragment;
+    var request;
+    try { request = JSON.parse(decodeURIComponent(fragment)); } catch (_) { return; }
+    if (!request || !/^shop_\d+_\d+$/.test(request.a && request.a[1]) ||
+        typeof request.q !== 'string' || !Array.isArray(request.a)) return;
+    var args = request.a;
+    var id = args[1];
+    if (request.f !== 'load' && request.f !== 'save') return;
+    if (args[2] !== token) { respond(id, false, undefined, 'Unauthorized'); return; }
+    try {
+      if (request.f === 'load') {
+        respond(id, true, localStorage.getItem(STORE_KEY));
+      } else {
+        if (!schema(args[0])) { respond(id, false, undefined, 'Invalid settings schema'); return; }
+        localStorage.setItem(STORE_KEY, args[0]);
+        respond(id, true, true);
+      }
+    } catch (error) { respond(id, false, undefined, error); }
+  }
+  window.addEventListener('hashchange', onHash);
+  // Ignore any request present at initial load. A page reload must not replay it.
+  document.title = 'SHOP_BRIDGE_READY:frag1:tok=' + token;
+})();
+</script>
+</body>
+</html>
